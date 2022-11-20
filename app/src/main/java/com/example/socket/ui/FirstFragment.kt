@@ -1,26 +1,22 @@
-package com.example.socket
+package com.example.socket.ui
 
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import com.example.socket.R
 import com.example.socket.databinding.FragmentFirstBinding
-import io.ktor.network.selector.*
-import io.ktor.network.sockets.*
-import io.ktor.utils.io.*
+import com.example.socket.presentation.MessageViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.net.Socket
 
 class FirstFragment : Fragment() {
     private var active = false
     private var _binding: FragmentFirstBinding? = null
-    private lateinit var connection: Socket
-    private lateinit var selectorManager: SelectorManager
-    private lateinit var output: ByteWriteChannel
-    private lateinit var input: ByteReadChannel
+    private val messageViewModel: MessageViewModel by viewModels()
 
     private val binding get() = _binding
 
@@ -28,10 +24,8 @@ class FirstFragment : Fragment() {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-
         _binding = FragmentFirstBinding.inflate(inflater, container, false)
         return binding!!.root
-
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -41,53 +35,32 @@ class FirstFragment : Fragment() {
                 binding!!.buttonFirst.text = getString(R.string.disconnect)
                 active = true
                 CoroutineScope(Dispatchers.IO).launch {
-                    connect()
+                    messageViewModel.connect(
+                        binding!!.editTextIp.text.toString(),
+                        binding!!.editTextPort.text.toString().toInt()
+                    )
                 }
             } else {
                 active = false
                 binding!!.buttonFirst.text = getString(R.string.connect)
-                close()
+                messageViewModel.close()
             }
         }
         binding!!.buttonSend.setOnClickListener {
+            val message = binding!!.editTextTextMultiLine.text.toString()
+            binding!!.textviewFirst.append("Cliente: $message\n")
+            binding!!.editTextTextMultiLine.setText("")
             CoroutineScope(Dispatchers.IO).launch {
-                send()
+                messageViewModel.send(message)
             }
+        }
+        messageViewModel.receivedMessage.observe(viewLifecycleOwner) { message ->
+            binding!!.textviewFirst.append("Server: $message\n")
         }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
-    }
-
-    private suspend fun send() {
-        if(!binding?.editTextTextMultiLine?.text?.trim().isNullOrEmpty()) {
-            output.writeStringUtf8("${binding!!.editTextTextMultiLine.text.trim()}\n")
-            binding!!.editTextTextMultiLine.setText("")
-        }
-    }
-
-    private suspend fun connect() {
-        selectorManager = SelectorManager(Dispatchers.IO)
-        val socket = aSocket(selectorManager).tcp().connect(
-            binding!!.editTextIp.text.toString(),
-            binding!!.editTextPort.text.toString().toInt()
-        )
-        input = socket.openReadChannel()
-        output = socket.openWriteChannel(autoFlush = true)
-        while (true) {
-            val message = input.readUTF8Line(128)
-            if(message != null) {
-                binding?.textviewFirst?.append(message)
-            } else {
-                close()
-            }
-        }
-    }
-
-    private fun close() {
-        connection.close()
-        selectorManager.close()
     }
 }
